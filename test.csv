@@ -1,0 +1,4 @@
+DatasetCount([LayerCount { layer: "ms_envconst_dioxines", count: 211 }, LayerCount { layer: "ms_envconst_spadom_jardins_urb", count: 175 }])
+layer,count
+ms_envconst_dioxines,211
+ms_envconst_spadom_jardins_urb,175

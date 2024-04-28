@@ -1,44 +1,131 @@
-use std::collections::HashMap;
-use std::fs;
+use clap::{Parser, Subcommand};
+use csv::{Error, Writer};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::File,
+    io::{self, Read, Write},
+    path::Path,
+};
 
-use gdal::{vector::LayerAccess, Dataset, DatasetOptions, GdalOpenFlags};
+use gdal::{vector::Layer, vector::LayerAccess, Dataset};
 
-#[derive(Debug)]
-struct LayerCount(HashMap<String, u64>);
+#[derive(Debug, Serialize, Deserialize)]
+struct LayerCount {
+    layer: String,
+    count: u64,
+}
 
-impl From<&Dataset> for LayerCount {
-    fn from(d: &Dataset) -> Self {
-        let mut h = HashMap::new();
-        for layer in d.layers() {
-            h.insert(layer.name(), layer.feature_count());
+impl From<&Layer<'_>> for LayerCount {
+    fn from(l: &Layer) -> Self {
+        LayerCount {
+            layer: l.name(),
+            count: l.feature_count(),
         }
-        LayerCount(h)
     }
 }
 
-fn main() {
-    let paths = fs::read_dir("./tests/").unwrap();
-    let mut data: Vec<Dataset> = vec![];
-    for p in paths {
-        if let Ok(path) = p {
-            if let Ok(d) = Dataset::open(path.path()) {
-                data.push(d);
-            }
+#[derive(Debug, Serialize, Deserialize)]
+struct DatasetCount(Vec<LayerCount>);
+
+impl DatasetCount {
+    fn new() -> DatasetCount {
+        DatasetCount(Vec::new())
+    }
+
+    fn from_csv<R: Read>(input: R) -> Result<Self, csv::Error> {
+        let mut rdr = csv::Reader::from_reader(input);
+        let mut dc: Vec<LayerCount> = vec![];
+        for r in rdr.deserialize() {
+            dc.push(r?);
         }
+        Ok(DatasetCount(dc))
     }
 
-    let mut lc: Vec<LayerCount> = vec![];
-
-    for d in data.iter() {
-        lc.push(d.into())
+    fn to_csv<W: Write>(&self, output: W) -> Result<(), csv::Error> {
+        let mut wtr = Writer::from_writer(output);
+        for r in self.0.iter() {
+            wtr.serialize(r)?;
+        }
+        Ok(())
     }
-    println!("{:?}", lc);
 
-    let test = Dataset::open("./tests/").unwrap();
-    let other_lc = LayerCount::from(&test);
-    println!("{:?}", other_lc);
+    fn compare(&self, dc: DatasetCount) {
+        todo!();
+    }
+}
 
-    let db_test = Dataset::open_ex("PG:dbname=osm_suisse", DatasetOptions{open_flags: GdalOpenFlags::GDAL_OF_ALL}).unwrap();
-    let other_lc2 = LayerCount::from(&db_test);
-    println!("{:?}", other_lc2);
+impl From<&Dataset> for DatasetCount {
+    fn from(d: &Dataset) -> Self {
+        d.layers().collect()
+    }
+}
+
+impl From<Vec<LayerCount>> for DatasetCount {
+    fn from(vlc: Vec<LayerCount>) -> Self {
+        DatasetCount(vlc)
+    }
+}
+
+impl FromIterator<LayerCount> for DatasetCount {
+    fn from_iter<T: IntoIterator<Item = LayerCount>>(iter: T) -> Self {
+        let mut dc = DatasetCount::new();
+        for i in iter {
+            dc.0.push(i);
+        }
+        dc
+    }
+}
+
+impl<'a> FromIterator<Layer<'a>> for DatasetCount {
+    fn from_iter<T: IntoIterator<Item = Layer<'a>>>(iter: T) -> Self {
+        let mut dc = DatasetCount::new();
+        for i in iter {
+            dc.0.push(LayerCount::from(&i));
+        }
+        dc
+    }
+}
+
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    Count {
+        #[arg()]
+        dataset: String,
+    },
+    Compare {
+        #[arg(num_args(2))]
+        counted: Option<Vec<String>>,
+    },
+}
+
+fn main() {
+    /*
+    let cli = Cli::parse();
+
+    match &cli.command {
+        Some(Command::Count { dataset }) => {
+            let data = Dataset::open(dataset).unwrap();
+            let datacount2: DatasetCount = DatasetCount::from(&data);
+            let _ = datacount2.to_csv(io::stdout());
+        }
+        Some(Command::Compare { counted }) => {
+            todo!();
+        }
+        None => {}
+    }
+    */
+
+    let mut file = File::open("foo.txt").unwrap();
+    let mut content = String::new();
+    file.read_to_string(&mut content).unwrap();
+    let dc = DatasetCount::from_csv(content.as_bytes());
+
+    println!("{content}");
+    println!("{:?}", dc.unwrap());
 }
