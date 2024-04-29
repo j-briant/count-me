@@ -1,13 +1,13 @@
-use clap::{Parser, Subcommand};
-use csv::{Error, Writer};
+use count_me::{cli::Cli, data};
+use csv::Writer;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    io::{self, Read, Write},
-    path::Path,
-};
+use std::io::{self, Read, Write};
 
-use gdal::{vector::Layer, vector::LayerAccess, Dataset};
+use gdal::{
+    errors::GdalError,
+    vector::{Layer, LayerAccess},
+    Dataset, GdalOpenFlags,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LayerCount {
@@ -86,46 +86,36 @@ impl<'a> FromIterator<Layer<'a>> for DatasetCount {
     }
 }
 
-#[derive(Parser)]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Command>,
-}
+fn main() -> Result<(), GdalError> {
+    let drivers = data::drivers().unwrap();
+    let d: Vec<&str> = drivers.iter().map(|s| &**s).collect();
 
-#[derive(Subcommand)]
-enum Command {
-    Count {
-        #[arg()]
-        dataset: String,
-    },
-    Compare {
-        #[arg(num_args(2))]
-        counted: Option<Vec<String>>,
-    },
-}
+    let opt = gdal::DatasetOptions {
+        open_flags: GdalOpenFlags::GDAL_OF_VECTOR,
+        allowed_drivers: Some(&d[..]),
+        open_options: None,
+        sibling_files: None,
+    };
 
-fn main() {
-    /*
-    let cli = Cli::parse();
+    // Initialize CLI
+    let cli = Cli::arg_parse();
 
-    match &cli.command {
-        Some(Command::Count { dataset }) => {
-            let data = Dataset::open(dataset).unwrap();
-            let datacount2: DatasetCount = DatasetCount::from(&data);
-            let _ = datacount2.to_csv(io::stdout());
+    // If 1 argument we count.
+    if cli.path.len() == 1 {
+        let mut p = String::from(&cli.path[0]);
+        // If zipfile prepend /vsizip/ to work with virtual file system.
+        if p.ends_with(".zip") {
+            p.insert_str(0, "/vsizip/");
         }
-        Some(Command::Compare { counted }) => {
-            todo!();
-        }
-        None => {}
+        let data = Dataset::open_ex(&p, opt)?;
+        let dc: DatasetCount = DatasetCount::from(&data);
+        dc.to_csv(io::stdout()).unwrap();
+        Ok(())
+    // If 2 arguments we compare.
+    } else if cli.path.len() == 2 {
+        todo!();
+    // If anything else we talk sh*t.
+    } else {
+        Err(GdalError::BadArgument("Missing input".into()))
     }
-    */
-
-    let mut file = File::open("foo.txt").unwrap();
-    let mut content = String::new();
-    file.read_to_string(&mut content).unwrap();
-    let dc = DatasetCount::from_csv(content.as_bytes());
-
-    println!("{content}");
-    println!("{:?}", dc.unwrap());
 }
