@@ -1,5 +1,6 @@
 use gdal::{errors::GdalError, DriverManager};
 
+/// Get GDAL drivers from the environment.
 pub fn drivers() -> Result<Vec<String>, GdalError> {
     DriverManager::register_all();
     let count = DriverManager::count();
