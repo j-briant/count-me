@@ -1,4 +1,4 @@
-pub use count_me::{cli::Cli, data, DatasetCount};
+pub use countme::{cli::Cli, data, DatasetCount};
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
