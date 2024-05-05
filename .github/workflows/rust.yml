@@ -25,7 +25,7 @@ jobs:
           override: true
 
       - name: Install gdal
-        run: apt update && apt install libgdal-dev
+        run: apt update && apt install libgdal-dev -y
 
       - name: Build
         run: cargo build --all --release && strip target/release/countme && mv target/release/countme target/release/countme_amd64
