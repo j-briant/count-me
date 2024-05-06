@@ -5,14 +5,17 @@ use csv::Writer;
 use gdal::errors::GdalError;
 use gdal::vector::LayerAccess;
 use gdal::{vector::Layer, Dataset, DatasetOptions, GdalOpenFlags};
-use polars::frame::DataFrame;
-use polars::prelude::*;
+/* use polars::frame::DataFrame;
+use polars::prelude::*; */
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::string::ParseError;
+use std::vec;
 
 // LayerCount
 /// Hosts the layer name and its corresponding feature count.
@@ -39,8 +42,27 @@ impl From<&Layer<'_>> for LayerCount {
     }
 }
 
+impl PartialEq for LayerCount {
+    fn eq(&self, other: &Self) -> bool {
+        (self.layer == other.layer) && (self.count == other.count)
+    }
+}
+
+impl FromStr for LayerCount {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once(',') {
+            Some((layer, count)) => Ok(LayerCount {
+                layer: layer.trim().into(),
+                count: count.trim().parse().expect("error around here"),
+            }),
+            None => Err(format!("error while parsing {s}")),
+        }
+    }
+}
+
 /// Wrapper around a Vec<LayerCount>. A Dataset is composed of layers. Counting Dataset features imply counting features for each Layer.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct DatasetCount(Vec<LayerCount>);
 
 // Functions
@@ -75,7 +97,7 @@ impl DatasetCount {
     }
 
     /// Compare to DatasetCount by joining them and calculating their count differences.
-    pub fn compare(self, other: DatasetCount) -> Result<(), CountError> {
+    /* pub fn compare(self, other: DatasetCount) -> Result<(), CountError> {
         let (df1, df2): (DataFrame, DataFrame) = (self.try_into()?, other.try_into()?);
         let df = &df1
             .outer_join(&df2, ["layer"], ["layer"])
@@ -104,6 +126,11 @@ impl DatasetCount {
             })?;
 
         Ok(())
+    } */
+
+    pub fn difference(&self, other: DatasetCount) {
+        let results: Vec<_> = self.0.iter().zip(other.0.iter()).collect();
+        println!("{:#?}", results);
     }
 }
 
@@ -124,6 +151,20 @@ impl From<&Dataset> for DatasetCount {
 impl From<Vec<LayerCount>> for DatasetCount {
     fn from(vlc: Vec<LayerCount>) -> Self {
         DatasetCount(vlc)
+    }
+}
+
+impl FromStr for DatasetCount {
+    type Err = CountError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut iter = s.lines();
+        if iter.next().is_some() {
+            Ok(DatasetCount(
+                iter.map(|x| LayerCount::from_str(x).unwrap()).collect(),
+            ))
+        } else {
+            panic!("omg2")
+        }
     }
 }
 
@@ -213,8 +254,9 @@ impl Error for CountError {
         match &self.kind {
             ErrorKind::Csv(e) => Some(e),
             ErrorKind::Gdal(e) => Some(e),
-            ErrorKind::Polars(e) => Some(e),
+            //ErrorKind::Polars(e) => Some(e),
             ErrorKind::File(e) => Some(e),
+            ErrorKind::ParseInt(e) => Some(e),
         }
     }
 }
@@ -223,11 +265,12 @@ impl Error for CountError {
 pub enum ErrorKind {
     Csv(csv::Error),
     Gdal(GdalError),
-    Polars(PolarsError),
+    //Polars(PolarsError),
     File(io::Error),
+    ParseInt(std::num::ParseIntError),
 }
 
-// Macro for parsing DatasetCount into a Polars DataFrame (from https://stackoverflow.com/questions/73167416/creating-polars-dataframe-from-vecstruct?rq=3)
+/* // Macro for parsing DatasetCount into a Polars DataFrame (from https://stackoverflow.com/questions/73167416/creating-polars-dataframe-from-vecstruct?rq=3)
 macro_rules! struct_to_dataframe {
     ($input:expr, [$($field:ident),+]) => {
         {
@@ -244,16 +287,16 @@ macro_rules! struct_to_dataframe {
             }
         }
     };
-}
+} */
 
-impl TryInto<DataFrame> for DatasetCount {
+/* impl TryInto<DataFrame> for DatasetCount {
     type Error = CountError;
     fn try_into(self) -> Result<DataFrame, Self::Error> {
         struct_to_dataframe!(self.0, [layer, count]).map_err(|kind| CountError {
             kind: ErrorKind::Polars(kind),
         })
     }
-}
+} */
 
 impl FromIterator<LayerCount> for DatasetCount {
     fn from_iter<T: IntoIterator<Item = LayerCount>>(iter: T) -> Self {
@@ -272,5 +315,57 @@ impl<'a> FromIterator<Layer<'a>> for DatasetCount {
             dc.0.push(LayerCount::from(&i));
         }
         dc
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layercount_from_string() {
+        let s = "layer1,100\n";
+        let wanted = LayerCount {
+            layer: "layer1".into(),
+            count: 100,
+        };
+        assert_eq!(wanted, LayerCount::from_str(s).unwrap())
+    }
+
+    #[test]
+    fn datasetcount_from_string() {
+        let s = "layer,count
+        layer1,100
+        layer2,50";
+        let wanted = DatasetCount(vec![
+            LayerCount {
+                layer: "layer1".into(),
+                count: 100,
+            },
+            LayerCount {
+                layer: "layer2".into(),
+                count: 50,
+            },
+        ]);
+        assert_eq!(wanted, DatasetCount::from_str(s).unwrap());
+    }
+
+    #[test]
+    fn datasetcount_difference() {
+        let dc1 = DatasetCount::from_str(
+            "layer,count
+        layer1,100
+        layer2,50",
+        )
+        .unwrap();
+
+        let dc2 = DatasetCount::from_str(
+            "layer,count
+        layer1,100
+        layer2,50",
+        )
+        .unwrap();
+
+        &dc1.difference(dc2);
     }
 }
