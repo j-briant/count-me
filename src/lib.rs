@@ -14,12 +14,11 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::string::ParseError;
 use std::vec;
 
 // LayerCount
 /// Hosts the layer name and its corresponding feature count.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct LayerCount {
     layer: String,
     count: u64,
@@ -128,9 +127,20 @@ impl DatasetCount {
         Ok(())
     } */
 
-    pub fn difference(&self, other: DatasetCount) {
-        let results: Vec<_> = self.0.iter().zip(other.0.iter()).collect();
-        println!("{:#?}", results);
+    pub fn difference(&self, other: DatasetCount) -> Vec<CountDifference> {
+        let diff: Vec<CountDifference> = self
+            .0
+            .iter()
+            .flat_map(|left| {
+                other.0.iter().map(|right| CountDifference {
+                    layer: left.clone().layer,
+                    left_count: Some(left.count),
+                    right_count: Some(right.count),
+                    difference: Some(left.count - right.count),
+                })
+            })
+            .collect();
+        diff
     }
 }
 
@@ -318,6 +328,14 @@ impl<'a> FromIterator<Layer<'a>> for DatasetCount {
     }
 }
 
+#[derive(Debug)]
+pub struct CountDifference {
+    layer: String,
+    left_count: Option<u64>,
+    right_count: Option<u64>,
+    difference: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +384,8 @@ mod tests {
         )
         .unwrap();
 
-        &dc1.difference(dc2);
+        let diff = dc1.difference(dc2);
+
+        println!("{:?}", diff);
     }
 }
