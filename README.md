@@ -31,7 +31,3 @@ or
 ```sh
 count-me my_count1.csv my_count2.csv
 ```
-
-## Why Rust?
-
-Because why not?
