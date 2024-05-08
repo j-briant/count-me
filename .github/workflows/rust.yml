@@ -23,6 +23,8 @@ jobs:
             target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
+      - name: Install libgdal-dev
+        run: sudo apt update && sudo apt install libgdal-dev -y
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       - name: Build Assets
