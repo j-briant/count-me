@@ -1,12 +1,9 @@
 pub mod cli;
-pub mod data;
 
 use csv::Writer;
 use gdal::errors::GdalError;
 use gdal::vector::LayerAccess;
-use gdal::{vector::Layer, Dataset, DatasetOptions, GdalOpenFlags};
-/* use polars::frame::DataFrame;
-use polars::prelude::*; */
+use gdal::{vector::Layer, Dataset, DatasetOptions, DriverManager, GdalOpenFlags};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -17,6 +14,36 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::vec;
 
+lazy_static::lazy_static! {
+    static ref DRIVERS: Vec<String> = {
+        DriverManager::register_all();
+        let count = DriverManager::count();
+        let mut list: Vec<String> = vec![];
+        for i in 0..count {
+            if let Ok(d) = DriverManager::get_driver(i) {
+            list.push(d.short_name())
+            }
+        }
+        list
+    };
+}
+
+lazy_static::lazy_static! {
+    static ref DRIVERS_STR: Vec<&'static str> = {
+        let v: Vec<&str> = DRIVERS.iter().map(|s| s.as_str()).collect();
+        v
+    };
+}
+
+fn get_dataset_options() -> DatasetOptions<'static> {
+    DatasetOptions {
+        open_flags: GdalOpenFlags::GDAL_OF_VECTOR,
+        allowed_drivers: Some(&DRIVERS_STR),
+        open_options: None,
+        sibling_files: None,
+    }
+}
+
 // LayerCount
 /// Hosts the layer name and its corresponding feature count.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -26,7 +53,6 @@ struct LayerCount {
 }
 
 // LayerCount traits
-
 impl Display for LayerCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{ layer: {}, count: {} }}", self.layer, self.count)
@@ -55,19 +81,18 @@ impl FromStr for LayerCount {
     }
 }
 
-/// Wrapper around a Vec<LayerCount>. A Dataset is composed of layers. Counting Dataset features imply counting features for each Layer.
+/// Wrapper around a `Vec<LayerCount>`. A Dataset is composed of layers. Counting Dataset features imply counting features for each Layer.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct DatasetCount(Vec<LayerCount>);
 
 // Functions
-
 impl DatasetCount {
-    /// Create an empty DatasetCount for initialization.
+    /// Create an empty `DatasetCount` for initialization.
     fn new() -> DatasetCount {
         DatasetCount(Vec::new())
     }
 
-    /// Build a DatasetCount from a csv formatted input implementing the Read trait.
+    /// Build a `DatasetCount` from a csv formatted input implementing the Read trait.
     pub fn from_csv<R: Read>(input: R) -> Result<Self, CountError> {
         let mut rdr = csv::Reader::from_reader(input);
         let mut dc: Vec<LayerCount> = vec![];
@@ -79,7 +104,7 @@ impl DatasetCount {
         Ok(DatasetCount(dc))
     }
 
-    /// Serialize a DatasetCount into a writer implementing the Write trait.
+    /// Serialize a `DatasetCount` into a writer implementing the Write trait.
     pub fn to_csv<W: Write>(&self, output: W) -> Result<csv::Writer<W>, CountError> {
         let mut wtr = Writer::from_writer(output);
         for r in self.0.iter() {
@@ -90,23 +115,7 @@ impl DatasetCount {
         Ok(wtr)
     }
 
-    /// Compare to DatasetCount by joining them and calculating their count differences.
-    pub fn difference(&self, other: DatasetCount) -> Vec<CountDifference> {
-        let diff: Vec<CountDifference> = self
-            .0
-            .iter()
-            .flat_map(|left| {
-                other.0.iter().map(|right| CountDifference {
-                    layer: left.clone().layer,
-                    left_count: Some(left.count),
-                    right_count: Some(right.count),
-                    difference: Some(i128::from(left.count) - i128::from(right.count)),
-                })
-            })
-            .collect();
-        diff
-    }
-
+    /// Compare to `DatasetCount` by joining them and calculating their count differences.
     pub fn outer_join(&self, other: &DatasetCount) -> Vec<CountDifference> {
         let mut differences = Vec::new();
         let mut layer_map = HashMap::new();
@@ -149,7 +158,6 @@ impl DatasetCount {
 }
 
 // Traits implementations
-
 impl Display for DatasetCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.iter().try_for_each(|x| write!(f, "{x}"))
@@ -195,24 +203,14 @@ impl TryFrom<&File> for DatasetCount {
 impl TryFrom<PathBuf> for DatasetCount {
     type Error = CountError;
     fn try_from(p: PathBuf) -> Result<Self, Self::Error> {
-        let drivers = data::drivers().map_err(|kind| CountError {
-            kind: ErrorKind::Gdal(kind),
-        })?;
-        let d: Vec<&str> = drivers.iter().map(|s| &**s).collect();
-
-        let opt = DatasetOptions {
-            open_flags: GdalOpenFlags::GDAL_OF_VECTOR,
-            allowed_drivers: Some(&d[..]),
-            open_options: None,
-            sibling_files: None,
-        };
+        let driver = get_dataset_options();
 
         match p.metadata() {
             // If metadata acessible and is file
             Ok(m) if m.is_file() => match p.extension() {
                 // If zip
                 Some(v) if v == "zip" => Ok(DatasetCount::from(
-                    &Dataset::open_ex(Path::new("/vsizip/").join(&p), opt).map_err(|kind| {
+                    &Dataset::open_ex(Path::new("/vsizip/").join(&p), driver).map_err(|kind| {
                         CountError {
                             kind: ErrorKind::Gdal(kind),
                         }
@@ -221,67 +219,33 @@ impl TryFrom<PathBuf> for DatasetCount {
                 // If any other extension
                 Some(_) => match DatasetCount::try_from(&File::open(&p).unwrap()) {
                     Ok(dc) => Ok(dc),
-                    Err(_) => Ok(DatasetCount::from(&Dataset::open_ex(&p, opt).map_err(
+                    Err(_) => Ok(DatasetCount::from(&Dataset::open_ex(&p, driver).map_err(
                         |kind| CountError {
                             kind: ErrorKind::Gdal(kind),
                         },
                     )?)),
                 },
                 // If no extension
-                None => Ok(DatasetCount::from(&Dataset::open_ex(&p, opt).map_err(
+                None => Ok(DatasetCount::from(&Dataset::open_ex(&p, driver).map_err(
                     |kind| CountError {
                         kind: ErrorKind::Gdal(kind),
                     },
                 )?)),
             },
             // If metadata accessible and anything else than file
-            Ok(_) => Ok(DatasetCount::from(&Dataset::open_ex(&p, opt).map_err(
+            Ok(_) => Ok(DatasetCount::from(&Dataset::open_ex(&p, driver).map_err(
                 |kind| CountError {
                     kind: ErrorKind::Gdal(kind),
                 },
             )?)),
             // If no Path metadata (e.g. database)
-            Err(_) => Ok(DatasetCount::from(&Dataset::open_ex(&p, opt).map_err(
+            Err(_) => Ok(DatasetCount::from(&Dataset::open_ex(&p, driver).map_err(
                 |kind| CountError {
                     kind: ErrorKind::Gdal(kind),
                 },
             )?)),
         }
     }
-}
-
-// Errors
-
-#[derive(Debug)]
-pub struct CountError {
-    pub kind: ErrorKind,
-}
-
-impl Display for CountError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "error while couting stuff")
-    }
-}
-
-impl Error for CountError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match &self.kind {
-            ErrorKind::Csv(e) => Some(e),
-            ErrorKind::Gdal(e) => Some(e),
-            //ErrorKind::Polars(e) => Some(e),
-            ErrorKind::File(e) => Some(e),
-            ErrorKind::ParseInt(e) => Some(e),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum ErrorKind {
-    Csv(csv::Error),
-    Gdal(GdalError),
-    //Polars(PolarsError),
-    File(io::Error),
-    ParseInt(std::num::ParseIntError),
 }
 
 impl FromIterator<LayerCount> for DatasetCount {
@@ -302,6 +266,37 @@ impl<'a> FromIterator<Layer<'a>> for DatasetCount {
         }
         dc
     }
+}
+
+// Errors
+#[derive(Debug)]
+pub struct CountError {
+    pub kind: ErrorKind,
+}
+
+impl Display for CountError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "error while couting stuff")
+    }
+}
+
+impl Error for CountError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match &self.kind {
+            ErrorKind::Csv(e) => Some(e),
+            ErrorKind::Gdal(e) => Some(e),
+            ErrorKind::File(e) => Some(e),
+            ErrorKind::ParseInt(e) => Some(e),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ErrorKind {
+    Csv(csv::Error),
+    Gdal(GdalError),
+    File(io::Error),
+    ParseInt(std::num::ParseIntError),
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

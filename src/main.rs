@@ -1,4 +1,4 @@
-pub use countme::{cli::Cli, data, CountDifference, CountDifferenceVec, DatasetCount};
+pub use countme::{cli::Cli, CountDifference, CountDifferenceVec, DatasetCount};
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
