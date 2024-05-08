@@ -1,4 +1,4 @@
-pub use countme::{cli::Cli, data, DatasetCount};
+pub use countme::{cli::Cli, data, CountDifference, CountDifferenceVec, DatasetCount};
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
@@ -22,7 +22,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let data1 = DatasetCount::try_from(p1)?;
         let data2 = DatasetCount::try_from(p2)?;
 
-        data1.compare(data2)?;
+        let difference = CountDifferenceVec::from(data1.outer_join(&data2));
+
+        difference.to_csv(io::stdout())?;
+        //data1.compare(data2)?;
         Ok(())
 
     // If anything else we talk sh*t.
