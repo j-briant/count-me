@@ -6,21 +6,36 @@ on:
     branches:
     - main
 jobs:
-  build:
-    name: Build bin
-    runs-on: ubuntu-22.04
+  github:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
-      - name: Install libgdal-dev
-        run: sudo apt update && sudo apt install libgdal-dev -y
-      - name: Build
-        run: cargo build --release
-      - name: Test
-        run: cargo test
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
       - name: Build Assets
-        run: tar -C target/release/ -czvf countme.tar.gz
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          tar -C target/${{ matrix.target }}/release/ -czvf countme-${{ matrix.target }}.tar.gz countme${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Upload Release Assets
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: softprops/action-gh-release@v1
         with:
           files: '*.tar.gz'
+      - name: Upload Artifacts
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v3
+        with:
+          path: '*.tar.gz'
