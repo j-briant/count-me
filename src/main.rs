@@ -1,9 +1,8 @@
 pub use countme::{cli::Cli, CountDifference, CountDifferenceVec, DatasetCount};
-use std::error::Error;
 use std::io;
 use std::path::PathBuf;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     // Initialize CLI
     let cli = Cli::arg_parse();
 
@@ -12,24 +11,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         let p = String::from(&cli.path[0]);
         let path = PathBuf::from(&p);
 
-        let dc = DatasetCount::try_from(path)?;
-        dc.to_csv(io::stdout())?;
-
-        Ok(())
+        match DatasetCount::try_from(path) {
+            Ok(dc) => match dc.to_csv(io::stdout()) {
+                Ok(_) => (),
+                Err(e) => {
+                    println!("{e}");
+                }
+            },
+            Err(e) => {
+                println!("{e}");
+            }
+        }
     // If 2 arguments we compare.
     } else if cli.path.len() == 2 {
         let (p1, p2) = (PathBuf::from(&cli.path[0]), PathBuf::from(&cli.path[1]));
-        let data1 = DatasetCount::try_from(p1)?;
-        let data2 = DatasetCount::try_from(p2)?;
 
-        let difference = CountDifferenceVec::from(data1.outer_join(&data2));
-
-        difference.to_csv(io::stdout())?;
-        //data1.compare(data2)?;
-        Ok(())
-
-    // If anything else we talk sh*t.
-    } else {
-        Ok(())
+        match (DatasetCount::try_from(p1), DatasetCount::try_from(p2)) {
+            (Ok(dc1), Ok(dc2)) => {
+                match CountDifferenceVec::from(dc1.outer_join(&dc2)).to_csv(io::stdout()) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        println!("{e}");
+                    }
+                }
+            }
+            (Ok(_), Err(e)) => println!("{e}"),
+            (Err(e), Ok(_)) => println!("{e}"),
+            (Err(e), Err(f)) => println!("{e}, {f}"),
+        }
     }
 }
