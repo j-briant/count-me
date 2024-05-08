@@ -2,15 +2,24 @@ on:
   push:
     branches:
     - main
+  pull_request:
+    branches:
+    - main
 jobs:
   build:
     name: Build bin
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
-    - name: Install libgdal-dev
-      run: sudo apt update && sudo apt install libgdal-dev -y
-    - name: Run tests
-      run: cargo test
-    - name: Build
-      run: cargo build --release
+      - uses: actions/checkout@v4
+      - name: Install libgdal-dev
+        run: sudo apt update && sudo apt install libgdal-dev -y
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test
+      - name: Upload
+        uses: AButler/upload-release-assets@v3.0
+        with:
+            files: "target/release/countme"
+            repo-token: ${{ secrets.GITHUB_TOKEN }
+
