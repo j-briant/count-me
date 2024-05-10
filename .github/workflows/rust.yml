@@ -4,7 +4,7 @@ on:
       - "v*.*.*"
 jobs:
   github:
-    name: Build ${{ matrix.target }}
+    name: Build ubuntu-latest
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,11 +23,11 @@ jobs:
       - name: Install libgdal-dev
         run: sudo apt update && sudo apt install libgdal-dev -y
       - name: Add target
-        run: rustup target add ${{ matrix.target }}
+        run: rustup target add x86_64-unknown-linux-gnu
       - name: Build Assets
         run: |
-          cargo build --release --target ${{ matrix.target }}
-          tar -C target/${{ matrix.target }}/release/ -czvf countme-${{ matrix.target }}.tar.gz countme${{ runner.os == 'Windows' && '.exe' || '' }}
+          cargo build --release --target x86_64-unknown-linux-gnu
+          tar -C target/x86_64-unknown-linux-gnu/release/ -czvf countme-x86_64-unknown-linux-gnu.tar.gz
       - name: Upload Release Assets
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: softprops/action-gh-release@v1
