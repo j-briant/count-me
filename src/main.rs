@@ -1,6 +1,17 @@
+use countme::CountError;
 pub use countme::{cli::Cli, CountDifference, CountDifferenceVec, DatasetCount};
+use std::error::Error;
 use std::io;
 use std::path::PathBuf;
+
+fn print_error(e: CountError) {
+    println!("Error: {e}");
+    let mut outer: &dyn Error = &e;
+    while let Some(source) = outer.source() {
+        println!("Cause: {source}");
+        outer = source;
+    }
+}
 
 fn main() {
     // Initialize CLI
@@ -14,13 +25,9 @@ fn main() {
         match DatasetCount::try_from(path) {
             Ok(dc) => match dc.to_csv(io::stdout()) {
                 Ok(_) => (),
-                Err(e) => {
-                    println!("{e}");
-                }
+                Err(e) => print_error(e),
             },
-            Err(e) => {
-                println!("{e}");
-            }
+            Err(e) => print_error(e),
         }
     // If 2 arguments we compare.
     } else if cli.path.len() == 2 {
@@ -30,14 +37,15 @@ fn main() {
             (Ok(dc1), Ok(dc2)) => {
                 match CountDifferenceVec::from(dc1.outer_join(&dc2)).to_csv(io::stdout()) {
                     Ok(_) => (),
-                    Err(e) => {
-                        println!("{e}");
-                    }
+                    Err(e) => print_error(e),
                 }
             }
-            (Ok(_), Err(e)) => println!("{e}"),
-            (Err(e), Ok(_)) => println!("{e}"),
-            (Err(e), Err(f)) => println!("{e}, {f}"),
+            (Ok(_), Err(e)) => print_error(e),
+            (Err(e), Ok(_)) => print_error(e),
+            (Err(e), Err(f)) => {
+                print_error(e);
+                print_error(f);
+            }
         }
     }
 }
