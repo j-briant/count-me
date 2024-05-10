@@ -19,7 +19,7 @@ jobs:
       - name: Build Assets
         run: |
           cargo build --release --target x86_64-unknown-linux-gnu
-          tar -C target/x86_64-unknown-linux-gnu/release/ -czvf countme-x86_64-unknown-linux-gnu.tar.gz
+          tar -C target/x86_64-unknown-linux-gnu/release/ -czvf countme-x86_64-unknown-linux-gnu.tar.gz countme
       - name: Upload Release Assets
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: softprops/action-gh-release@v1
