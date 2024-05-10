@@ -18,8 +18,8 @@ fn main() {
     let cli = Cli::arg_parse();
 
     // If 1 argument we count.
-    if cli.path.len() == 1 {
-        let p = String::from(&cli.path[0]);
+    if cli.src.len() == 1 {
+        let p = String::from(&cli.src[0]);
         let path = PathBuf::from(&p);
 
         match DatasetCount::try_from(path) {
@@ -30,8 +30,8 @@ fn main() {
             Err(e) => print_error(e),
         }
     // If 2 arguments we compare.
-    } else if cli.path.len() == 2 {
-        let (p1, p2) = (PathBuf::from(&cli.path[0]), PathBuf::from(&cli.path[1]));
+    } else if cli.src.len() == 2 {
+        let (p1, p2) = (PathBuf::from(&cli.src[0]), PathBuf::from(&cli.src[1]));
 
         match (DatasetCount::try_from(p1), DatasetCount::try_from(p2)) {
             (Ok(dc1), Ok(dc2)) => {
@@ -47,5 +47,7 @@ fn main() {
                 print_error(f);
             }
         }
+    } else {
+        println!("Error: 1 or 2 arguments required");
     }
 }
