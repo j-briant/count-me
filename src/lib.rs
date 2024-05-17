@@ -1,5 +1,3 @@
-pub mod cli;
-
 use csv::Writer;
 use gdal::errors::GdalError;
 use gdal::vector::LayerAccess;
